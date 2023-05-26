@@ -1,8 +1,10 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using UnityEditor;
+using UnityEditor.Experimental.GraphView;
 using UnityEngine;
+using Object = UnityEngine.Object;
 
 namespace Snorlax.Animation.Events
 {
@@ -12,7 +14,7 @@ namespace Snorlax.Animation.Events
         // FBX Controller
         private ModelImporter FBX;
         private GameObject Model;
-        private UnityEngine.Object FBXObject;
+        private Object FBXObject;
 
         // Animation Clips and events
         private List<AnimationClip> clips = new List<AnimationClip>();
@@ -22,10 +24,10 @@ namespace Snorlax.Animation.Events
         private AnimationClip selectedAnimationClip = null;
 
         // Search strings
-        string ClipSearchString = String.Empty;
-        string PreviousClipSearchString = String.Empty;
-        string selectedString = String.Empty;
-        string EventSearchString = String.Empty;
+        string ClipSearchString = string.Empty;
+        string PreviousClipSearchString = string.Empty;
+        string SelectedAnimatinClipName = string.Empty;
+        string EventSearchString = string.Empty;
 
         // Styles
         private Color color_selected = Color.grey;
@@ -39,13 +41,25 @@ namespace Snorlax.Animation.Events
         // Tool Bar 
         private string[] toolbarStrings = { "||", "Play", "<<", "<", ">", ">>" };
         private int SelectedAnimationButton = 0;
-        private float AnimationValue;
+
+        private string[] toolbarInfo = { "Events", "Curves", "Settings", "Preview" };
+        private int SelectedInfoBar = 0;
 
         // Animation Frames
         private float clipFrame;
-        private float previousClipFrame;
         private float editorDeltaTime = 0f;
         private float lastTimeSinceStartup = 0f;
+        private bool repaint = false;
+
+        // Preivewer
+        Editor Previewer = null;
+        private static object timeControlField;
+        private static FieldInfo FieldInfoFrame;
+
+        // Misc
+        private List<float> AnimationValueFloats = new List<float> { 0, 1, -1.5f, -1.2f, 1.2f, 1.5f };
+        private List<string> arrayEventMethodName = new List<string>();
+        private int selectedEvent = -1;
 
         #endregion
 
@@ -65,13 +79,12 @@ namespace Snorlax.Animation.Events
                 color_default = GUI.backgroundColor;
             }
 
-            GUILayout.BeginHorizontal();
+            Wrapper.HorizontalWrapper(() =>
             {
                 Section1();
 
                 Section2();
-            }
-            GUILayout.EndHorizontal();
+            });
         }
 
         private void OnSelectionChange()
@@ -83,15 +96,17 @@ namespace Snorlax.Animation.Events
         private void Update()
         {
             SetEditorDeltaTime();
+
             if (selectedAnimationClip == null) return;
 
-            if (SelectedAnimationButton == 0 && previousClipFrame == clipFrame) return;
             Repaint();
 
+            SetFrame(clipFrame);
             if (Model) selectedAnimationClip.SampleAnimation(Model, clipFrame);
 
-            clipFrame += editorDeltaTime * AnimationValue;
-
+            #region Clip Frame Logic
+            
+            clipFrame += editorDeltaTime * Helper.ReturnValue(SelectedAnimationButton, AnimationValueFloats);
 
             if (clipFrame < 0f)
             {
@@ -101,8 +116,7 @@ namespace Snorlax.Animation.Events
             {
                 clipFrame = 0f;
             }
-
-            previousClipFrame = clipFrame;
+            #endregion
 
             void SetEditorDeltaTime()
             {
@@ -113,296 +127,286 @@ namespace Snorlax.Animation.Events
                 editorDeltaTime = (float)EditorApplication.timeSinceStartup - lastTimeSinceStartup;
                 lastTimeSinceStartup = (float)EditorApplication.timeSinceStartup;
             }
+
+            void SetFrame(float frame)
+            {
+                if (Previewer == null) return;
+                if ((Previewer.target is AnimationClip clip) || FieldInfoFrame != null) FieldInfoFrame.SetValue(timeControlField, frame);
+            }
         }
         #endregion
 
         #region Sections
         private void Section1()
         {
-            GUILayout.BeginVertical("box", GUILayout.Width(250), GUILayout.Height(position.height - 8));
+            EditorGUILayout.BeginVertical("box", GUILayout.Width(250), GUILayout.Height(position.height - 8)); ////
 
-            Settingbuttons();
-
-            Animation();
-
-            SearchBar(ref ClipSearchString);
-            clipScrollBar = GUILayout.BeginScrollView(clipScrollBar);
+            Wrapper.LabeledField("In Scene Model", () =>
             {
-                if (ClipSearchString != PreviousClipSearchString)
-                {
-                    PreviousClipSearchString = ClipSearchString;
-                    filtedClips = PreviousClipSearchString == String.Empty ? animationClips : animationClips.Where(e => e.name.ToLower().Contains(PreviousClipSearchString.ToLower())).ToArray();
-                }
-
-                if (filtedClips != null) foreach (ModelImporterClipAnimation clips in filtedClips)
-                {
-                    GUI.backgroundColor = selectedString == clips.name ? color_selected : color_default;
-                    if (GUILayout.Button(clips.name, leftButton))
+                Wrapper.BeginChecks(
+                    () => Model = (GameObject)EditorGUILayout.ObjectField(Model, typeof(GameObject), true),
+                    () =>
                     {
-                        selectedString = clips.name;
-                        clipFrame = 0;
-                    }
+                        arrayEventMethodName.Clear();
+                        if (Model != null && Model.TryGetComponent<Animator>(out Animator anim))
+                            Helper.ListOfEventMethods(anim, ref arrayEventMethodName);
+                    });
 
-                    GUI.backgroundColor = color_default;
-                }
-            }
-            GUILayout.EndScrollView();
-
-            GUILayout.EndVertical();
-
-            void Settingbuttons()
-            {
-                GUILayout.BeginHorizontal();
-
-                GUILayout.Label("In Scene Model");
-                Model = (GameObject)EditorGUILayout.ObjectField(Model, typeof(GameObject), true);
-                if (GUILayout.Button("Save", GUILayout.Width(40)))
+                Wrapper.SmallButton("Save", () =>
                 {
                     if (selectedAnimationClip != null)
                     {
                         SerializedObject so = new SerializedObject(FBX);
-
-                        SerializedProperty clips = so.FindProperty("m_ClipAnimations");
-                        List<AnimationEvent[]> animationEvents = new List<AnimationEvent[]>(FBX.clipAnimations.Length);
+                        SerializedProperty SerializedClips = so.FindProperty("m_ClipAnimations");
 
                         for (int i = 0; i < FBX.clipAnimations.Length; i++)
                         {
-                            SetEvents(clips.GetArrayElementAtIndex(i));
+                            Helper.SetEvents(SerializedClips.GetArrayElementAtIndex(i), clips);
                         }
 
                         so.ApplyModifiedProperties();
                         FBX.SaveAndReimport();
                     }
-                }
+                });
+            });
 
-                GUILayout.EndHorizontal();
-            }
-
-            void Animation()
+            Wrapper.LabeledField("Animation FBX", () =>
             {
-                GUILayout.BeginHorizontal();
-                GUILayout.Label("Animation FBX");
-
-                EditorGUI.BeginChangeCheck();
-                FBXObject = (UnityEngine.Object)EditorGUILayout.ObjectField(FBXObject, typeof(UnityEngine.Object), false);
-                if (EditorGUI.EndChangeCheck())
-                {
-                    NewFBXLoaded();
-                }
-
-                if (GUILayout.Button("Info", GUILayout.Width(40)))
-                {
-                    GetWindow<Settings>("Information");
-                }
-
-                GUILayout.EndHorizontal();
-            }
-
-            void SetEvents(SerializedProperty sp)
-            {
-                var foundClip = this.clips.ToList().Find(e => e.name == sp.FindPropertyRelative("name").stringValue);
-
-                SerializedProperty serializedProperty = sp.FindPropertyRelative("events");
-                serializedProperty.ClearArray();
-                if (serializedProperty != null && serializedProperty.isArray && foundClip.events != null && foundClip.events.Length > 0)
-                {
-
-                    for (int i = 0; i < foundClip.events.Length; i++)
+                Wrapper.BeginChecks(
+                    () => FBXObject = (Object)EditorGUILayout.ObjectField(FBXObject, typeof(Object), false),
+                    () =>
                     {
-                        AnimationEvent animationEvent = foundClip.events[i];
-                        serializedProperty.InsertArrayElementAtIndex(serializedProperty.arraySize);
+                        NewFBXLoaded();
+                    });
 
-                        SerializedProperty eventProperty = serializedProperty.GetArrayElementAtIndex(i);
-                        eventProperty.FindPropertyRelative("floatParameter").floatValue = animationEvent.floatParameter;
-                        eventProperty.FindPropertyRelative("functionName").stringValue = animationEvent.functionName;
-                        eventProperty.FindPropertyRelative("intParameter").intValue = animationEvent.intParameter;
-                        eventProperty.FindPropertyRelative("objectReferenceParameter").objectReferenceValue = animationEvent.objectReferenceParameter;
-                        eventProperty.FindPropertyRelative("data").stringValue = animationEvent.stringParameter;
+                Wrapper.SmallButton("Info", () =>
+                {
+                    GetWindow<EditorSettings>("Information");
+                });
+            });
 
-                        int frame = (int)Mathf.Round(foundClip.events[i].time * foundClip.frameRate);
-                        eventProperty.FindPropertyRelative("time").floatValue = Decimal.ToSingle(new Decimal(frame) / new decimal(foundClip.frameRate * foundClip.length));
+            Wrapper.SearchBar(ref ClipSearchString);
+
+            Wrapper.ScrollWrapper(ref clipScrollBar, () =>
+            {
+                Wrapper.IsNotCheck<string>(ClipSearchString, PreviousClipSearchString, () =>
+                {
+                    PreviousClipSearchString = ClipSearchString;
+                    filtedClips = PreviousClipSearchString == string.Empty ? animationClips : animationClips.Where(e => e.name.ToLower().Contains(PreviousClipSearchString.ToLower())).ToArray();
+                });
+
+                if(filtedClips != null)
+                {
+                    foreach (ModelImporterClipAnimation clips in filtedClips)
+                    {
+                        GUI.backgroundColor = SelectedAnimatinClipName == clips.name ? color_selected : color_default;
+                        if (GUILayout.Button(clips.name, leftButton))
+                        {
+                            repaint = true;
+                            SelectedAnimatinClipName = clips.name;
+                            clipFrame = 0;
+                        }
+
+                        GUI.backgroundColor = color_default;
                     }
                 }
-            }
+            });
+
+            EditorGUILayout.EndVertical(); ////
         }
 
         private void Section2()
         {
-            #region Animation Controls and check
-            if (selectedString != String.Empty)
+            Wrapper.IsNotCheck<string>(SelectedAnimatinClipName, string.Empty, () =>
             {
-                if (selectedAnimationClip == null || selectedAnimationClip.name != selectedString)
+                if (selectedAnimationClip == null || selectedAnimationClip.name != SelectedAnimatinClipName)
                 {
-                    selectedAnimationClip = clips.ToList().Find(e => e.name.ToLower().Replace(" ", "") == selectedString.ToLower().Replace(" ", ""));
+                    selectedAnimationClip = clips.ToList().Find(e => e.name.ToLower().Replace(" ", "") == SelectedAnimatinClipName.ToLower().Replace(" ", ""));
                     animationEvents = selectedAnimationClip.events.ToList();
-                    //clipFrame = animationEvents.First().time;
                 }
-            }
-            #endregion
+            });
 
             if (!selectedAnimationClip) return;
 
-            GUILayout.BeginVertical(GUILayout.Height(position.height - 8));
-            EditorGUI.BeginChangeCheck();
-            AnimationControls();
+            EditorGUILayout.BeginVertical(GUILayout.Height(position.height - 8)); ////
 
-            #region Frame time logic
-            decimal frameTime = (1.0m / new Decimal(selectedAnimationClip.frameRate));
-            float clipDuration = selectedAnimationClip == null ? 0 : selectedAnimationClip.length * selectedAnimationClip.frameRate;
+            SelectedInfoBar = GUILayout.Toolbar(SelectedInfoBar, toolbarInfo, "toolbarbutton");
 
-            GUILayout.BeginHorizontal();
-            {
-                EditorGUILayout.LabelField("Clip Duration: " + clipDuration);
+            if(SelectedInfoBar == 0 || SelectedInfoBar == 3) AnimationControls();
 
-                SearchBar(ref EventSearchString);
+            if(SelectedInfoBar == 0) AnimationEventInfo();
 
-                if (GUILayout.Button("+", GUILayout.Width(40f)))
-                {
-                    animationEvents.Add(new AnimationEvent() { time = clipFrame });
-                    EventSearchString = String.Empty;
-                }
-            }
-            GUILayout.EndHorizontal();
-            #endregion
+            if(SelectedInfoBar == 1 || SelectedInfoBar == 2) EditorGUILayout.HelpBox("Remind future snorlax to do it. Current me is a mix of tired and lazy", MessageType.Error, true);
 
-            #region Animation Events
-            eventScrollBar = EditorGUILayout.BeginScrollView(eventScrollBar, "box");
-            
-            for (int i = 0; i < animationEvents.Count; i++)
-            {
-                AnimationEvent animEvent = animationEvents[i];
+            if (SelectedInfoBar == 3) Preview();
 
-                if (!String.IsNullOrEmpty(EventSearchString) && !animEvent.functionName.ToLower().Contains(EventSearchString.ToLower())) continue;
-
-                int frame = (int)Mathf.Round(animEvent.time * selectedAnimationClip.frameRate);
-                GUILayout.BeginHorizontal();
-                {
-                    GUILayout.Label("Frame: " + frame);
-
-                    if (GUILayout.Button("-", GUILayout.Width(40f)))
-                    {
-                        animationEvents.Remove(animationEvents[i]);
-                    }
-                }
-                GUILayout.EndHorizontal();
-
-                GUILayout.BeginHorizontal();
-                {
-                    GUILayout.Label("Method Name");
-
-                    animEvent.functionName = GUILayout.TextField(animEvent.functionName);
-                }
-                GUILayout.EndHorizontal();
-
-                animEvent.time = Decimal.ToSingle(new Decimal(EditorGUILayout.IntField("Event Frame", frame)) * frameTime);
-            }
-            EditorGUILayout.EndScrollView();
-
-            if (EditorGUI.EndChangeCheck())
-            {
-                AnimationUtility.SetAnimationEvents(selectedAnimationClip, animationEvents.ToArray());
-            }
-            #endregion
-
-            GUILayout.EndVertical();
+            EditorGUILayout.EndVertical(); ////
 
             void AnimationControls()
             {
-                #region Animation Controls
-                GUILayout.BeginHorizontal();
+                Wrapper.HorizontalWrapper(() =>
                 {
                     SelectedAnimationButton = GUILayout.Toolbar(SelectedAnimationButton, toolbarStrings, "toolbarbutton");
-
-                    switch (SelectedAnimationButton)
-                    {
-                        case (int)1:
-                            AnimationValue = 1;
-                            break;
-                        case (int)2:
-                            AnimationValue = -1.5f;
-                            break;
-                        case (int)3:
-                            AnimationValue = -1.2f;
-                            break;
-                        case (int)4:
-                            AnimationValue = 1.2f;
-                            break;
-                        case (int)5:
-                            AnimationValue = 1.5f;
-                            break;
-                    }
-                }
-                GUILayout.EndHorizontal();
-                #endregion
+                });
 
                 #region Current Frame Slider
                 float length = selectedAnimationClip == null ? 0 : selectedAnimationClip.length;
                 float frameRate = selectedAnimationClip == null ? 0 : selectedAnimationClip.frameRate;
-                #endregion
 
-                #region Camera Views
-                GUILayout.BeginHorizontal();
+                Wrapper.HorizontalWrapper(() =>
                 {
                     clipFrame = EditorGUILayout.Slider(clipFrame, 0f, length);
                     GUILayout.Label(Mathf.Round(clipFrame * frameRate) + "/" + length * frameRate, GUILayout.Width(50));
-                }
-                GUILayout.EndHorizontal();
+                });
                 #endregion
+            }
+
+            void AnimationEventInfo()
+            {
+                Wrapper.BeginChecks(
+                () =>
+                {
+                    decimal frameTime = (1.0m / new decimal(selectedAnimationClip.frameRate));
+                    float clipDuration = selectedAnimationClip == null ? 0 : selectedAnimationClip.length * selectedAnimationClip.frameRate;
+
+                    Wrapper.LabeledField("Clip Duration: " + clipDuration, () =>
+                    {
+                        Wrapper.SearchBar(ref EventSearchString);
+
+                        Wrapper.SmallButton("+", () =>
+                        {
+                            animationEvents.Add(new AnimationEvent() { time = clipFrame });
+                            EventSearchString = string.Empty;
+                        });
+                    });
+
+                    Wrapper.ScrollWrapper(ref eventScrollBar,  () =>
+                    {
+                        for (int i = 0; i < animationEvents.Count; i++)
+                        {
+                            AnimationEvent animEvent = animationEvents[i];
+
+                            if (!string.IsNullOrEmpty(EventSearchString) && !animEvent.functionName.ToLower().Contains(EventSearchString.ToLower())) continue;
+
+                            Wrapper.VerticalWrapper(() =>
+                            {
+                                int frame = (int)Mathf.Round(animEvent.time * selectedAnimationClip.frameRate);
+
+                                Wrapper.LabeledField("Frame: " + frame, () =>
+                                {
+                                    Wrapper.SmallButton("-", () => animationEvents.Remove(animationEvents[i]));
+                                });
+
+                                Wrapper.LabeledField("Method Name", () =>
+                                {
+                                    animEvent.functionName = GUILayout.TextField(animEvent.functionName);
+
+                                    if (GUILayout.Button("", EditorStyles.popup, GUILayout.Width(20f)))
+                                    {
+                                        selectedEvent = i;
+                                        SearchWindow.Open(new SearchWindowContext(GUIUtility.GUIToScreenPoint(Event.current.mousePosition)),
+                                            new SearchTreeEventMethods(arrayEventMethodName.ToArray(), SaveEventName));
+                                    }
+                                });
+
+                                animEvent.time = decimal.ToSingle(new decimal(EditorGUILayout.IntField("Event Frame", frame)) * frameTime);
+                            });
+                        }
+                    });
+
+                },
+                () => AnimationUtility.SetAnimationEvents(selectedAnimationClip, animationEvents.ToArray()));
+            }
+
+            void Preview()
+            {
+                if (Previewer != null && repaint)
+                {
+                    DestroyImmediate(Previewer);
+                    repaint = false;
+                }
+
+                if (Previewer == null)
+                {
+                    Previewer = Editor.CreateEditor(selectedAnimationClip);
+                    Previewer.HasPreviewGUI();
+                    InitPreviewer(Previewer);
+                    Repaint();
+                }
+
+                try
+                {
+                    var rectPosition = GUILayoutUtility.GetRect(0, 0);
+                    rectPosition.Set(rectPosition.x, rectPosition.y, position.width - rectPosition.x, position.height - rectPosition.y);
+                    Previewer.OnInteractivePreviewGUI(rectPosition, EditorStyles.whiteLabel);
+                    Repaint();
+                }
+                catch (System.Exception)
+                {
+                    Previewer = null;
+                }
             }
         }
         #endregion
 
+        #region Left over methods
         private void NewFBXLoaded()
         {
+            #region Reset Everything
             clipFrame = 0;
             animationEvents.Clear();
             selectedAnimationClip = null;
-            selectedString = string.Empty;
+            SelectedAnimatinClipName = string.Empty;
             animationClips = null;
             filtedClips = null;
+            PreviousClipSearchString = "1";
             clips.Clear();
+            #endregion
+
             string path = AssetDatabase.GetAssetPath(FBXObject);
             Repaint();
             if (!path.ToLower().Contains(".fbx")) return;
 
+            #region Set FBX and AnimationClip Info
             FBX = (ModelImporter)AssetImporter.GetAtPath(path);
             animationClips = new ModelImporterClipAnimation[FBX.clipAnimations.Length];
             var Items = AssetDatabase.LoadAllAssetsAtPath(path);
-            clips.Clear();
+     
             foreach (var item in Items)
             {
                 if (item is AnimationClip clip) clips.Add(clip);
-
             }
 
-            PreviousClipSearchString = "1";
-            Array.Copy(FBX.clipAnimations, animationClips, FBX.clipAnimations.Length);
+            System.Array.Copy(FBX.clipAnimations, animationClips, FBX.clipAnimations.Length);
             Repaint();
+            #endregion
         }
 
-        private void SearchBar(ref string SearchString)
+        public void SaveEventName(string methodName)
         {
-            EditorGUILayout.BeginHorizontal();
-
-            SearchString = GUILayout.TextField(SearchString, GUI.skin.FindStyle("ToolbarSeachTextField"));
-
-            if (GUILayout.Button("", GUI.skin.FindStyle("ToolbarSeachCancelButton")))
-            {
-                SearchString = "";
-            }
-
-            EditorGUILayout.EndHorizontal();
+            if (selectedEvent == -1) return;
+            animationEvents[selectedEvent].functionName = methodName;
+            selectedEvent = -1;
+            AnimationUtility.SetAnimationEvents(selectedAnimationClip, animationEvents.ToArray());
         }
 
-        private class Settings : EditorWindow
+        private static void InitPreviewer(Editor editor)
         {
-            private void OnGUI()
-            {
-                GUILayout.Label("General", "LargeLabel");
-                EditorGUILayout.HelpBox("Remember to click save in order to apply animation events", MessageType.Info, true);
-                EditorGUILayout.HelpBox("Models have to be in scene as it will sample the animation with that model. Models can be changed at any time", MessageType.Info, true);
-                EditorGUILayout.HelpBox("To load an fbx file's animations, select it from project files or place it in the Animation FBX field", MessageType.Info, true);
-            }
+            if (!(editor.target is AnimationClip clip)) return;
+            var avatarPreviewFieldInfo = editor.GetType().GetField("m_AvatarPreview", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (avatarPreviewFieldInfo == null) return;
+            var value = avatarPreviewFieldInfo.GetValue(editor);
+            if (value == null) return;
+            var timeControl = value.GetType().GetField("timeControl", BindingFlags.Public | BindingFlags.Instance);
+            if (timeControl == null) return;
+            timeControlField = timeControl.GetValue(value);
+            if (timeControlField == null) return;
+            var stopTime = timeControlField.GetType().GetField("stopTime", BindingFlags.Public | BindingFlags.Instance);
+            if (stopTime == null) return;
+            stopTime.SetValue(timeControlField, clip.length);
+            FieldInfoFrame = timeControlField.GetType().GetField("currentTime", BindingFlags.Public | BindingFlags.Instance);
         }
+        #endregion
     }
+
 }
