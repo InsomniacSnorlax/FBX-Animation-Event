@@ -5,11 +5,13 @@ This editor tool was personally commissioned for the Elden ring series by Sebast
 * Load animation clips from FBX 
 * Add/Edit/Remove animation events from clips
 * Can preview animations on in-scene models and an in-built previewer
+* Search tree of methods for method name
 
 ## How to use
 * You can select an FBX file with animation clips in your project files or you can manually drag it into the "Animation FBX" field.
 * The "In Scene Model" field is optional and will allow for animation previews of the targeted model in the unity scene (Note does not return to the original pose.)
 * A list of animation clips will appear once an FBX file is selected, once an animation clip is selected you can then add animation events using the "+" button.
+* Search tree works by finding methods from getting a gameObject with the animator component placed in "In Scene Model" otherwise if empty no method names will appear
 * The animation controls above allow for animation previewing and when creating an animation event it will use the slider's current value for the new animation event.
 * Once done remember to click save to ensure the changes are applied. Note that changing animation clips does not remove your events from the previous animation clips so you can continue editing.
 
