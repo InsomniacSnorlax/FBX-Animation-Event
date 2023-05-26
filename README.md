@@ -20,7 +20,7 @@ This editor tool was personally commissioned for the Elden ring series by Sebast
 
 ## Planned Features
 * Collapsable List
-~~* In-window animation previewer (in scene alternative)
+* ~~In-window animation previewer (in scene alternative)~~
 * Change slider
 * Replicate Unity's animation timeline
 * Use Animator Controller to get animation clips (Already done just lazy)
