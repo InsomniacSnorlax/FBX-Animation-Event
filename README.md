@@ -4,7 +4,7 @@ This editor tool was personally commissioned for the Elden ring series by Sebast
 ## Current Features
 * Load animation clips from FBX 
 * Add/Edit/Remove animation events from clips
-* Can preview animations on in-scene models
+* Can preview animations on in-scene models and an in-built previewer
 
 ## How to use
 * You can select an FBX file with animation clips in your project files or you can manually drag it into the "Animation FBX" field.
@@ -13,11 +13,12 @@ This editor tool was personally commissioned for the Elden ring series by Sebast
 * The animation controls above allow for animation previewing and when creating an animation event it will use the slider's current value for the new animation event.
 * Once done remember to click save to ensure the changes are applied. Note that changing animation clips does not remove your events from the previous animation clips so you can continue editing.
 
-![image](https://cdn.discordapp.com/attachments/1082834337357115422/1100384145303146566/image.png)
+![image](https://raw.githubusercontent.com/InsomniacSnorlax/FBX-Animation-Event/main/img/v1.1.0%20Image%201.png)
+![image](https://raw.githubusercontent.com/InsomniacSnorlax/FBX-Animation-Event/main/img/v1.1.0%20Image%202.png)
 
 ## Planned Features
 * Collapsable List
-* In-window animation previewer (in scene alternative)
+~~* In-window animation previewer (in scene alternative)
 * Change slider
 * Replicate Unity's animation timeline
 * Use Animator Controller to get animation clips (Already done just lazy)
