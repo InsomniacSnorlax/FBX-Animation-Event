@@ -5,6 +5,8 @@ This editor tool was personally commissioned for the Elden ring series by Sebast
 * Load animation clips from FBX 
 * Add/Edit/Remove animation events from clips
 * Can preview animations on in-scene models and an in-built previewer
+* in-built previewer can be made into its own separate window
+* Copy and paste animation events to other animation clips
 * Search tree of methods for method name
 
 ## How to use
