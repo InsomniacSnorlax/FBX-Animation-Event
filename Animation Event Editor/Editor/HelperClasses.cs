@@ -90,6 +90,8 @@ namespace Snorlax.Animation.Events
 
             arrayEventMethodName = tmpNames;
         }
+
+        
     }
 
     // Property of Yaell. Github enforcer and royal guard to Kiran
@@ -137,10 +139,8 @@ namespace Snorlax.Animation.Events
         }
         
         // Yes I use this a lot
-        public static void SmallButton(string label, Action content)
+        public static void SmallButton(string label, Action content, float size = 40f)
         {
-            const float size = 40f;
-
             if (GUILayout.Button(label, GUILayout.Width(size)))
             {
                 content();

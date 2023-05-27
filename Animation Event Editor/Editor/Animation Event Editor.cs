@@ -50,6 +50,7 @@ namespace Snorlax.Animation.Events
         private float editorDeltaTime = 0f;
         private float lastTimeSinceStartup = 0f;
         private bool repaint = false;
+        private float previousFrame;
 
         // Preivewer
         Editor Previewer = null;
@@ -60,7 +61,8 @@ namespace Snorlax.Animation.Events
         private List<float> AnimationValueFloats = new List<float> { 0, 1, -1.5f, -1.2f, 1.2f, 1.5f };
         private List<string> arrayEventMethodName = new List<string>();
         private int selectedEvent = -1;
-
+        private List<AnimationEvent> copiedEvents = new List<AnimationEvent>();
+        private PreviewWindow previewWindow;
         #endregion
 
         #region Default Methods
@@ -89,7 +91,6 @@ namespace Snorlax.Animation.Events
 
         private void OnSelectionChange()
         {
-            FBXObject = Selection.activeObject;
             NewFBXLoaded();
         }
 
@@ -98,11 +99,6 @@ namespace Snorlax.Animation.Events
             SetEditorDeltaTime();
 
             if (selectedAnimationClip == null) return;
-
-            Repaint();
-
-            SetFrame(clipFrame);
-            if (Model) selectedAnimationClip.SampleAnimation(Model, clipFrame);
 
             #region Clip Frame Logic
             
@@ -117,6 +113,17 @@ namespace Snorlax.Animation.Events
                 clipFrame = 0f;
             }
             #endregion
+
+            if (previousFrame != clipFrame)
+            {
+                SetFrame(clipFrame);
+                if (previewWindow != null) previewWindow.SetFrame(clipFrame);
+                if (Model) selectedAnimationClip.SampleAnimation(Model, clipFrame);
+
+                previousFrame = clipFrame;
+            }
+
+            Repaint();
 
             void SetEditorDeltaTime()
             {
@@ -181,7 +188,7 @@ namespace Snorlax.Animation.Events
 
                 Wrapper.SmallButton("Info", () =>
                 {
-                    GetWindow<EditorSettings>("Information");
+                    GetWindow<AnimationEventEditor>("Animation Events");
                 });
             });
 
@@ -232,13 +239,15 @@ namespace Snorlax.Animation.Events
 
             SelectedInfoBar = GUILayout.Toolbar(SelectedInfoBar, toolbarInfo, "toolbarbutton");
 
-            if(SelectedInfoBar == 0 || SelectedInfoBar == 3) AnimationControls();
+            #region Info Bar sections
+            if (SelectedInfoBar == 0 || SelectedInfoBar == 3) AnimationControls();
 
             if(SelectedInfoBar == 0) AnimationEventInfo();
 
             if(SelectedInfoBar == 1 || SelectedInfoBar == 2) EditorGUILayout.HelpBox("Remind future snorlax to do it. Current me is a mix of tired and lazy", MessageType.Error, true);
 
             if (SelectedInfoBar == 3) Preview();
+            #endregion
 
             EditorGUILayout.EndVertical(); ////
 
@@ -272,6 +281,16 @@ namespace Snorlax.Animation.Events
                     Wrapper.LabeledField("Clip Duration: " + clipDuration, () =>
                     {
                         Wrapper.SearchBar(ref EventSearchString);
+
+                        Wrapper.SmallButton("Copy", () =>
+                        {
+                            copiedEvents = selectedAnimationClip.events.ToList();
+                        });
+
+                        Wrapper.SmallButton("Paste", () =>
+                        {
+                            if (copiedEvents != null) animationEvents = copiedEvents;
+                        }, 50f);
 
                         Wrapper.SmallButton("+", () =>
                         {
@@ -320,8 +339,16 @@ namespace Snorlax.Animation.Events
 
             void Preview()
             {
+                Wrapper.SmallButton("Open Preview", () =>
+                {
+                    previewWindow = PreviewWindow.InstanceWindow;
+                    previewWindow.Repainting(selectedAnimationClip);
+                    previewWindow.NullableAction = () => { previewWindow = null; };
+                }, 100f);
+
                 if (Previewer != null && repaint)
                 {
+                    if (previewWindow != null) previewWindow.Repainting(selectedAnimationClip, repaint);
                     DestroyImmediate(Previewer);
                     repaint = false;
                 }
@@ -352,6 +379,10 @@ namespace Snorlax.Animation.Events
         #region Left over methods
         private void NewFBXLoaded()
         {
+            string path = AssetDatabase.GetAssetPath(Selection.activeObject);
+            Repaint();
+            if (!path.ToLower().Contains(".fbx")) return;
+
             #region Reset Everything
             clipFrame = 0;
             animationEvents.Clear();
@@ -363,10 +394,8 @@ namespace Snorlax.Animation.Events
             clips.Clear();
             #endregion
 
-            string path = AssetDatabase.GetAssetPath(FBXObject);
-            Repaint();
-            if (!path.ToLower().Contains(".fbx")) return;
-
+           
+            FBXObject = Selection.activeObject;
             #region Set FBX and AnimationClip Info
             FBX = (ModelImporter)AssetImporter.GetAtPath(path);
             animationClips = new ModelImporterClipAnimation[FBX.clipAnimations.Length];
@@ -408,5 +437,4 @@ namespace Snorlax.Animation.Events
         }
         #endregion
     }
-
 }
