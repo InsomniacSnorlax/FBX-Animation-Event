@@ -5,7 +5,7 @@ using UnityEditor;
 using UnityEditor.Experimental.GraphView;
 using UnityEngine;
 using Object = UnityEngine.Object;
-using Snorlax.EditorUtlities;
+using Snorlax.EditorUtilities;
 
 namespace Snorlax.Animation.Events
 {
@@ -92,7 +92,7 @@ namespace Snorlax.Animation.Events
 
         private void OnSelectionChange()
         {
-            NewFBXLoaded();
+            NewFBXLoaded(Selection.activeObject);
         }
 
         private void Update()
@@ -184,7 +184,7 @@ namespace Snorlax.Animation.Events
                     () => FBXObject = (Object)EditorGUILayout.ObjectField(FBXObject, typeof(Object), false),
                     () =>
                     {
-                        NewFBXLoaded();
+                        NewFBXLoaded(FBXObject);
                     });
 
                 Wrapper.SmallButton("Info", () =>
@@ -378,9 +378,9 @@ namespace Snorlax.Animation.Events
         #endregion
 
         #region Left over methods
-        private void NewFBXLoaded()
+        private void NewFBXLoaded(Object target)
         {
-            string path = AssetDatabase.GetAssetPath(Selection.activeObject);
+            string path = AssetDatabase.GetAssetPath(target);
             Repaint();
             if (!path.ToLower().Contains(".fbx")) return;
 
@@ -396,7 +396,7 @@ namespace Snorlax.Animation.Events
             #endregion
 
            
-            FBXObject = Selection.activeObject;
+            FBXObject = target;
             #region Set FBX and AnimationClip Info
             FBX = (ModelImporter)AssetImporter.GetAtPath(path);
             animationClips = new ModelImporterClipAnimation[FBX.clipAnimations.Length];
