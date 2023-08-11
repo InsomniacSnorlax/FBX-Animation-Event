@@ -2,7 +2,7 @@ using System;
 using UnityEditor;
 using UnityEngine;
 
-namespace Snorlax.EditorUtlities
+namespace Snorlax.EditorUtilities
 {
     // Property of Yaell. Github enforcer and royal guard to Kiran
     public static class Wrapper
